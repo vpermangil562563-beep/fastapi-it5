@@ -1,56 +1,70 @@
-"""Create the FastAPI app and connect its route modules."""
+from typing import List, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response, status
+from fastapi.responses import JSONResponse
 
-from app.database import database_connection, initialize_database
-from app.models import Student, StudentInput
+from database import AppError, Database, ProductRepository, SaleService
+from schemas import ProductIn, ProductOut, ProductUpdate, SaleIn, SaleOut
 
-app = FastAPI(title="Beginner Student API")
+app = FastAPI(title="Easy Store", description="Simple product and sales system.")
+db = Database("store.db")
+products = ProductRepository(db)
+sales = SaleService(db)
+
+
+@app.exception_handler(AppError)
+def handle_app_error(_request: Request, error: AppError):
+    return JSONResponse(status_code=error.status_code, content={"detail": error.message})
 
 
 @app.get("/")
 def home():
-    return {"message": "Welcome! Visit /docs to try the API."}
+    return {"message": "Easy Store is running.", "docs": "/docs"}
 
 
-@app.get("/students")
-def get_students():
-    result = Student.list_students(database_connection=database_connection)
-    return {"students": result}
+@app.post("/products", status_code=status.HTTP_201_CREATED, response_model=ProductOut)
+def create_product(body: ProductIn):
+    return products.create(body.name, body.price, body.stock)
 
 
-@app.get("/students/{student_id}")
-def get_student(student_id: int):
-    result = Student.get_student(
-        student_id=student_id, database_connection=database_connection
-    )
-    return {"student": result}
+@app.get("/products", response_model=List[ProductOut])
+def list_products(search: Optional[str] = None):
+    return products.list(search)
 
 
-@app.post("/student")
-def create_student(student: StudentInput):
-    result = Student.create_student(
-        student_input=student, database_connection=database_connection
-    )
-    return {"student": result}
+@app.get("/products/{product_id}", response_model=ProductOut)
+def get_product(product_id: int):
+    return products.get(product_id)
 
 
-@app.put("/student/{student_id}")
-def edit_student(student_id: int, student: Student):
-    result = Student.update_student(
-        student_id=student_id,
-        student_input=student,
-        database_connection=database_connection,
-    )
-    return {"student": result}
+# PATCH because we only update the fields the client sends.
+@app.patch("/products/{product_id}", response_model=ProductOut)
+def update_product(product_id: int, body: ProductUpdate):
+    return products.update(product_id, body.model_dump(exclude_unset=True))
 
 
-@app.delete("/student/{student_id}")
-def delete_student(student_id: int):
-    Student.delete_student(
-        student_id=student_id, database_connection=database_connection
-    )
-    return {"message": "Student deleted successfully"}
+@app.delete("/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_product(product_id: int):
+    products.delete(product_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-initialize_database()
+@app.post("/sales", status_code=status.HTTP_201_CREATED, response_model=SaleOut)
+def make_sale(body: SaleIn):
+    return sales.sell(body.product_id, body.quantity)
+
+
+@app.get("/sales", response_model=List[SaleOut])
+def list_sales():
+    return sales.list()
+
+
+@app.get("/sales/revenue")
+def revenue():
+    return {"total_revenue": sales.total_revenue()}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
