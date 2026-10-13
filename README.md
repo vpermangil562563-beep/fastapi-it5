@@ -1,172 +1,521 @@
-# Beginner FastAPI + SQLite
+# Easy Store
 
-This repository is a starter project for students who want to build their own backend API and database app in Python. It shows the basic pattern for:
+A simple FastAPI + SQLite API for managing products and recording sales. Selling a product checks the stock, reduces it, and saves the sale in one transaction, and the API can report the total revenue.
 
-- creating Python classes for request and response data
-- writing SQL queries against SQLite
-- creating REST API endpoints in FastAPI
+## Setup (Windows, PowerShell)
 
-Use it as a template for your own project. Replace the student example with your own data model, table name, and endpoints.
+```powershell
+git clone <your-repo-url>
+cd <your-project-folder>
+```
 
-## Run it on Windows
-
-From this folder, create and activate a virtual environment, then install the dependencies:
+With venv and pip:
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m uvicorn main:app --reload
 ```
 
-Then open <http://127.0.0.1:8000/docs> in your browser. The API docs page will let you try the project without writing a separate client.
+With uv:
 
-## Project structure
-
-- `main.py` creates the FastAPI app and defines the routes.
-- `app/database.py` opens SQLite connections and creates tables.
-- `app/models.py` defines the Pydantic data classes.
-- `students.db` is the SQLite database file created the first time the app runs.
-
-## How to make your own classes
-
-The project already uses a simple pattern: a Pydantic model describes the data, and the route functions call helper methods on that model.
-
-Example from `app/models.py`:
-
-```python
-from pydantic import BaseModel, Field
-
-
-class StudentInput(BaseModel):
-    name: str = Field(min_length=1)
-    age: int = Field(ge=0)
-
-
-class Student(StudentInput):
-    id: int
+```powershell
+uv venv
+.\.venv\Scripts\Activate.ps1
+uv pip install -r requirements.txt
 ```
 
-To make your own class for a different project, follow the same pattern:
+If there is no `requirements.txt`, install the two packages directly:
 
-```python
-from pydantic import BaseModel, Field
-
-
-class CourseInput(BaseModel):
-    title: str = Field(min_length=1)
-    credits: int = Field(ge=0)
-
-
-class Course(CourseInput):
-    id: int
+```powershell
+python -m pip install fastapi uvicorn
 ```
 
-A model class is useful because FastAPI can validate incoming JSON automatically and return the data in a consistent format.
+If PowerShell blocks the activate script, run this once in the same window and activate again:
 
-## How to make your own SQL queries
-
-The database connection is managed in `app/database.py`:
-
-```python
-@contextmanager
-def database_connection() -> Iterator[sqlite3.Connection]:
-    connection = sqlite3.connect(DATABASE_FILE)
-    connection.row_factory = sqlite3.Row
-    try:
-        yield connection
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
-    finally:
-        connection.close()
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-Use it like this when you write your own queries:
+## Run
 
-```python
-with database_connection() as connection:
-    rows = connection.execute(
-        "SELECT id, title, credits FROM courses WHERE id = ?",
-        (course_id,),
-    ).fetchall()
+Run these from the project folder (the one that contains `main.py`):
+
+```powershell
+uvicorn main:app --reload
 ```
 
-Important ideas:
+You can also start it with:
 
-- `CREATE TABLE` defines a new table.
-- `INSERT` adds rows.
-- `SELECT` reads data.
-- `UPDATE` changes data.
-- `DELETE` removes data.
-- Use `?` placeholders instead of string concatenation to keep SQL safe.
-
-Example table setup:
-
-```python
-connection.execute(
-    """
-    CREATE TABLE IF NOT EXISTS courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        credits INTEGER NOT NULL CHECK (credits >= 0)
-    )
-    """
-)
+```powershell
+python main.py
 ```
 
-## How to make your own endpoints
+Open http://127.0.0.1:8000/docs to try every endpoint (click an endpoint, then Try it out). The database file `store.db` is created in the project folder on first start. To start from an empty database, stop the server and delete `store.db`.
 
-FastAPI routes live in `main.py`. Each function is connected to an HTTP method and path using decorators like `@app.get`, `@app.post`, `@app.put`, and `@app.delete`.
+## Project tree
 
-Example:
-
-```python
-@app.get("/courses")
-def get_courses():
-    result = Course.list_courses(database_connection=database_connection)
-    return {"courses": result}
-
-
-@app.post("/course")
-def create_course(course: CourseInput):
-    result = Course.create_course(
-        course_input=course,
-        database_connection=database_connection,
-    )
-    return {"course": result}
+```text
+main.py            Routes and the error handler
+database.py        Database, ProductRepository, SaleService, AppError
+schemas.py         Pydantic models
+requirements.txt
+store.db           Created automatically
 ```
 
-The route function usually does three things:
+## Sample tests
 
-1. accept a request body or URL parameter
-2. call a SQL query through a model helper
-3. return JSON for the client
+Run them in order on an empty database, using the /docs page. Each step shows the request, the body to send (JSON), and the output to expect (JSON).
 
-## Reuse this pattern for your own project
+- `sold_at` is the date and time of the sale in the form `YYYY-MM-DD HH:MM:SS`, so yours will differ.
+- Errors come back as `{"detail": "<message>"}`.
+- Input mistakes come back as `{"detail": [ ... ]}` with a `loc` naming the bad field.
 
-A good project workflow is:
+### Root
 
-1. Create a new model class in `app/models.py`.
-2. Add a table in `app/database.py` with `CREATE TABLE IF NOT EXISTS`.
-3. Add SQL helper methods to your model class.
-4. Add a route in `main.py` that calls those helper methods.
-5. Test the endpoint in the Swagger UI at `/docs`.
+**1. Welcome message**
 
-For example, if your project is about books, students, courses, or games, you can copy this structure and replace `Student` with your own concept. The pattern stays the same even when the data changes.
+```http
+GET /
+```
 
-## Current example endpoints
+Expect:
 
-This starter project already includes these routes:
+```json
+{
+  "message": "Easy Store is running.",
+  "docs": "/docs"
+}
+```
 
-- `GET /` returns a welcome message
-- `GET /students` lists students
-- `GET /students/{student_id}` gets one student
-- `POST /student` creates a student
-- `PUT /student/{student_id}` updates a student
-- `DELETE /student/{student_id}` deletes a student
+### Products
 
-Use these as examples when building your own API routes.
+**2. Add a product**
 
+```http
+POST /products
+```
 
+Body:
+
+```json
+{
+  "name": "Notebook",
+  "price": 45.5,
+  "stock": 20
+}
+```
+
+Expect:
+
+```json
+{
+  "id": 1,
+  "name": "Notebook",
+  "price": 45.5,
+  "stock": 20
+}
+```
+
+**3. Add two more products**
+
+```http
+POST /products
+```
+
+Send each body one at a time. They return ids 2 and 3.
+
+```json
+{
+  "name": "Ballpen",
+  "price": 12,
+  "stock": 50
+}
+```
+
+```json
+{
+  "name": "Backpack",
+  "price": 650,
+  "stock": 3
+}
+```
+
+**4. Duplicate name**
+
+```http
+POST /products
+```
+
+Body:
+
+```json
+{
+  "name": "Notebook",
+  "price": 10,
+  "stock": 1
+}
+```
+
+Expect:
+
+```json
+{
+  "detail": "A product with that name already exists."
+}
+```
+
+**5. Invalid input**
+
+```http
+POST /products
+```
+
+Body:
+
+```json
+{
+  "name": "Eraser",
+  "price": -5,
+  "stock": 10
+}
+```
+
+Expect (the exact wording can differ slightly between Pydantic versions):
+
+```json
+{
+  "detail": [
+    {
+      "type": "greater_than_equal",
+      "loc": ["body", "price"],
+      "msg": "Input should be greater than or equal to 0",
+      "input": -5,
+      "ctx": { "ge": 0 }
+    }
+  ]
+}
+```
+
+An empty name, a negative stock, or a missing field gives the same kind of error.
+
+**6. List all products**
+
+```http
+GET /products
+```
+
+Expect: the 3 products ordered by name.
+
+```json
+[
+  { "id": 3, "name": "Backpack", "price": 650.0, "stock": 3 },
+  { "id": 2, "name": "Ballpen", "price": 12.0, "stock": 50 },
+  { "id": 1, "name": "Notebook", "price": 45.5, "stock": 20 }
+]
+```
+
+**7. Search by name**
+
+```http
+GET /products?search=note
+```
+
+Expect:
+
+```json
+[
+  { "id": 1, "name": "Notebook", "price": 45.5, "stock": 20 }
+]
+```
+
+The search matches part of the name and ignores letter case. `GET /products?search=ball` returns only Ballpen, and `GET /products?search=NOTE` returns only Notebook.
+
+**8. Get one product**
+
+```http
+GET /products/1
+```
+
+Expect:
+
+```json
+{
+  "id": 1,
+  "name": "Notebook",
+  "price": 45.5,
+  "stock": 20
+}
+```
+
+```http
+GET /products/99
+```
+
+Expect:
+
+```json
+{
+  "detail": "Product not found."
+}
+```
+
+**9. Update a product (only the fields you send)**
+
+```http
+PATCH /products/1
+```
+
+Body:
+
+```json
+{
+  "price": 50
+}
+```
+
+Expect (name and stock are unchanged):
+
+```json
+{
+  "id": 1,
+  "name": "Notebook",
+  "price": 50.0,
+  "stock": 20
+}
+```
+
+**10. Update errors**
+
+```http
+PATCH /products/1
+```
+
+Body (name already used by another product):
+
+```json
+{
+  "name": "Ballpen"
+}
+```
+
+Expect:
+
+```json
+{
+  "detail": "A product with that name already exists."
+}
+```
+
+```http
+PATCH /products/99
+```
+
+Body:
+
+```json
+{
+  "price": 1
+}
+```
+
+Expect:
+
+```json
+{
+  "detail": "Product not found."
+}
+```
+
+### Sales
+
+**11. Record a sale**
+
+```http
+POST /sales
+```
+
+Body:
+
+```json
+{
+  "product_id": 1,
+  "quantity": 2
+}
+```
+
+Expect (total is price 50.0 times quantity 2):
+
+```json
+{
+  "id": 1,
+  "product_id": 1,
+  "product_name": "Notebook",
+  "quantity": 2,
+  "total": 100.0,
+  "sold_at": "YYYY-MM-DD HH:MM:SS"
+}
+```
+
+`GET /products/1` now shows `"stock": 18`.
+
+**12. Not enough stock (nothing is saved)**
+
+```http
+POST /sales
+```
+
+Body:
+
+```json
+{
+  "product_id": 3,
+  "quantity": 5
+}
+```
+
+Expect:
+
+```json
+{
+  "detail": "Not enough stock. Only 3 left."
+}
+```
+
+`GET /products/3` still shows `"stock": 3`, and `GET /sales` still lists only sale 1. The failed sale changed nothing.
+
+**13. Unknown product and bad quantity**
+
+```http
+POST /sales
+```
+
+Body:
+
+```json
+{
+  "product_id": 99,
+  "quantity": 1
+}
+```
+
+Expect:
+
+```json
+{
+  "detail": "Product not found."
+}
+```
+
+A `"quantity": 0` gives an input error naming `quantity`.
+
+**14. Sell the last items**
+
+```http
+POST /sales
+```
+
+Body:
+
+```json
+{
+  "product_id": 3,
+  "quantity": 3
+}
+```
+
+Expect (3 times 650.0):
+
+```json
+{
+  "id": 2,
+  "product_id": 3,
+  "product_name": "Backpack",
+  "quantity": 3,
+  "total": 1950.0,
+  "sold_at": "YYYY-MM-DD HH:MM:SS"
+}
+```
+
+`GET /products/3` now shows `"stock": 0`. Sending the same sale again expects:
+
+```json
+{
+  "detail": "Not enough stock. Only 0 left."
+}
+```
+
+**15. List sales (newest first)**
+
+```http
+GET /sales
+```
+
+Expect:
+
+```json
+[
+  {
+    "id": 2,
+    "product_id": 3,
+    "product_name": "Backpack",
+    "quantity": 3,
+    "total": 1950.0,
+    "sold_at": "YYYY-MM-DD HH:MM:SS"
+  },
+  {
+    "id": 1,
+    "product_id": 1,
+    "product_name": "Notebook",
+    "quantity": 2,
+    "total": 100.0,
+    "sold_at": "YYYY-MM-DD HH:MM:SS"
+  }
+]
+```
+
+**16. Total revenue**
+
+```http
+GET /sales/revenue
+```
+
+Expect (100.0 plus 1950.0):
+
+```json
+{
+  "total_revenue": 2050.0
+}
+```
+
+### Deleting products
+
+**17. Delete a product with no sales**
+
+```http
+DELETE /products/2
+```
+
+Expect: an empty response (deleted). Repeating it expects:
+
+```json
+{
+  "detail": "Product not found."
+}
+```
+
+**18. Delete a product that has sales**
+
+```http
+DELETE /products/1
+```
+
+Expect:
+
+```json
+{
+  "detail": "This product has sales records and cannot be deleted."
+}
+```
+
+`GET /products` now lists only Backpack and Notebook.
